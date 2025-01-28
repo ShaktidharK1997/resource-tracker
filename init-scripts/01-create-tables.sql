@@ -61,9 +61,8 @@ CREATE TABLE gpu_leases (
     end_date TIMESTAMP NOT NULL,
     status VARCHAR NOT NULL,
     created_time TIMESTAMP NOT NULL,
-    updated_time TIMESTAMP NOT NULL,
+    updated_time TIMESTAMP,
     degraded BOOLEAN DEFAULT FALSE,
-    trust_id VARCHAR,
     last_seen_time TIMESTAMP NOT NULL,
     first_time_not_seen TIMESTAMP
 );
@@ -76,11 +75,9 @@ CREATE TABLE gpu_lease_reservations (
     resource_type VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
     created_time TIMESTAMP NOT NULL,
-    updated_time TIMESTAMP NOT NULL,
+    updated_time TIMESTAMP,
     missing_resources BOOLEAN DEFAULT FALSE,
     resources_changed BOOLEAN DEFAULT FALSE,
     resource_properties JSONB,
-    network_id VARCHAR,
-    min_hosts INTEGER,
-    max_hosts INTEGER
+    network_id VARCHAR
 );
