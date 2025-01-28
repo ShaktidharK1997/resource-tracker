@@ -351,7 +351,7 @@ class ResourceTracker:
                         'created_time': lease['created_at'],
                         'updated_time': lease['updated_at'],
                         'degraded': lease.get('degraded', False),
-                        'trust_id': lease.get('trust_id'),
+                        #'trust_id': lease.get('trust_id'),
                         'last_seen_time': current_time
                     }
                     
@@ -365,8 +365,7 @@ class ResourceTracker:
                                 end_date = %(end_date)s,
                                 updated_time = %(updated_time)s,
                                 last_seen_time = %(last_seen_time)s,
-                                degraded = %(degraded)s,
-                                trust_id = %(trust_id)s
+                                degraded = %(degraded)s
                             WHERE lease_id = %(lease_id)s
                         """, lease_data)
                     else:
@@ -375,11 +374,11 @@ class ResourceTracker:
                             INSERT INTO gpu_leases (
                                 lease_id, lease_name, user_id, project_id,
                                 start_date, end_date, status, created_time,
-                                updated_time, degraded, trust_id, last_seen_time
+                                updated_time, degraded, last_seen_time
                             ) VALUES (
                                 %(lease_id)s, %(lease_name)s, %(user_id)s, %(project_id)s,
                                 %(start_date)s, %(end_date)s, %(status)s, %(created_time)s,
-                                %(updated_time)s, %(degraded)s, %(trust_id)s, %(last_seen_time)s
+                                %(updated_time)s, %(degraded)s, %(last_seen_time)s
                             )
                         """, lease_data)
 
@@ -424,9 +423,9 @@ class ResourceTracker:
                     'missing_resources': reservation.get('missing_resources', False),
                     'resources_changed': reservation.get('resources_changed', False),
                     'resource_properties': Json(reservation.get('resource_properties', {})),
-                    'network_id': reservation.get('network_id'),
-                    'min_hosts': reservation.get('min', 1),
-                    'max_hosts': reservation.get('max', 1)
+                    'network_id': reservation.get('network_id')
+                    #'min_hosts': reservation.get('min', 1),
+                    #'max_hosts': reservation.get('max', 1)
                 }
                 
                 if reservation['id'] in existing_ids:
@@ -438,9 +437,7 @@ class ResourceTracker:
                             missing_resources = %(missing_resources)s,
                             resources_changed = %(resources_changed)s,
                             resource_properties = %(resource_properties)s,
-                            network_id = %(network_id)s,
-                            min_hosts = %(min_hosts)s,
-                            max_hosts = %(max_hosts)s
+                            network_id = %(network_id)s
                         WHERE reservation_id = %(reservation_id)s
                     """, reservation_data)
                 else:
@@ -449,13 +446,11 @@ class ResourceTracker:
                         INSERT INTO gpu_lease_reservations (
                             reservation_id, lease_id, resource_id, resource_type,
                             status, created_time, updated_time, missing_resources,
-                            resources_changed, resource_properties, network_id,
-                            min_hosts, max_hosts
+                            resources_changed, resource_properties, network_id
                         ) VALUES (
                             %(reservation_id)s, %(lease_id)s, %(resource_id)s, %(resource_type)s,
                             %(status)s, %(created_time)s, %(updated_time)s, %(missing_resources)s,
-                            %(resources_changed)s, %(resource_properties)s, %(network_id)s,
-                            %(min_hosts)s, %(max_hosts)s
+                            %(resources_changed)s, %(resource_properties)s, %(network_id)s
                         )
                     """, reservation_data)
                 
