@@ -230,7 +230,8 @@ class ResourceCleaner:
                     logger.info(f"Deleting server: {server['resource_name']} ({server['status']})")
                     
                     # Release floating IPs first
-                    self.release_floating_ips(server, dry_run=False)
+                    # commenting floating ips release code
+                    #self.release_floating_ips(server, dry_run=False)
                     
                     # Delete the server
                     self.os_conn.compute.delete_server(server_id)
