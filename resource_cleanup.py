@@ -201,70 +201,96 @@ class ResourceCleaner:
             raise
 
     def delete_resources(self, resources: Dict[str, List[Dict]], dry_run: bool = True):
-        """Delete the specified resources in the correct order"""
-        if dry_run:
-            logger.info("DRY RUN - No resources will be deleted")
-            self.display_resources(resources)
-            return
+    """Delete the specified resources in the correct order"""
+    if dry_run:
+        logger.info("DRY RUN - No resources will be deleted")
+        self.display_resources(resources)
+        return
 
-        try:
-            # 1. Delete servers first
-            for server in resources['servers']:
-                try:
-                    server_id = server['resource_id']
-                    logger.info(f"Deleting server: {server['resource_name']} ({server['status']})")
-                    
-                    # Release floating IPs first
-                    self.release_floating_ips(server, dry_run=False)
-                    
-                    # Delete the server
-                    self.os_conn.compute.delete_server(server_id)
-                    logger.info(f"Deleted server: {server_id}")
-                except Exception as e:
-                    logger.error(f"Error deleting server {server_id}: {str(e)}")
-                    continue
+    # Track successfully deleted resources
+    deleted_resources = {
+        'servers': [],
+        'routers': [],
+        'subnets': [],
+        'networks': []
+    }
 
-            # 2. Clean and delete routers
-            for router in resources['routers']:
-                try:
-                    router_id = router['resource_id']
-                    logger.info(f"Processing router: {router['resource_name']} ({router['status']})")
-                    
-                    # Clean router first
-                    self.clean_router(router, dry_run=False)
-                    
-                    # Delete the router
-                    self.os_conn.network.delete_router(router_id)
-                    logger.info(f"Deleted router: {router_id}")
-                except Exception as e:
-                    logger.error(f"Error deleting router {router_id}: {str(e)}")
-                    continue
+    try:
+        # 1. Delete servers first
+        for server in resources['servers']:
+            try:
+                server_id = server['resource_id']
+                logger.info(f"Deleting server: {server['resource_name']} ({server['status']})")
+                
+                # Release floating IPs first
+                self.release_floating_ips(server, dry_run=False)
+                
+                # Delete the server
+                self.os_conn.compute.delete_server(server_id)
+                deleted_resources['servers'].append(server_id)
+                logger.info(f"Deleted server: {server_id}")
+            except Exception as e:
+                logger.error(f"Error deleting server {server_id}: {str(e)}")
+                continue
 
-            # 3. Delete subnets
-            for subnet in resources['subnets']:
-                try:
-                    subnet_id = subnet['resource_id']
-                    logger.info(f"Deleting subnet: {subnet['resource_name']} ({subnet['cidr']})")
-                    self.os_conn.network.delete_subnet(subnet_id)
-                    logger.info(f"Deleted subnet: {subnet_id}")
-                except Exception as e:
-                    logger.error(f"Error deleting subnet {subnet_id}: {str(e)}")
-                    continue
+        # 2. Clean and delete routers
+        for router in resources['routers']:
+            try:
+                router_id = router['resource_id']
+                logger.info(f"Processing router: {router['resource_name']} ({router['status']})")
+                
+                # Clean router first
+                self.clean_router(router, dry_run=False)
+                
+                # Delete the router
+                self.os_conn.network.delete_router(router_id)
+                deleted_resources['routers'].append(router_id)
+                logger.info(f"Deleted router: {router_id}")
+            except Exception as e:
+                logger.error(f"Error deleting router {router_id}: {str(e)}")
+                continue
 
-            # 4. Finally delete networks
-            for network in resources['networks']:
-                try:
-                    network_id = network['resource_id']
-                    logger.info(f"Deleting network: {network['resource_name']} ({network['status']})")
-                    self.os_conn.network.delete_network(network_id)
-                    logger.info(f"Deleted network: {network_id}")
-                except Exception as e:
-                    logger.error(f"Error deleting network {network_id}: {str(e)}")
-                    continue
+        # 3. Delete subnets
+        for subnet in resources['subnets']:
+            try:
+                subnet_id = subnet['resource_id']
+                logger.info(f"Deleting subnet: {subnet['resource_name']} ({subnet['cidr']})")
+                self.os_conn.network.delete_subnet(subnet_id)
+                deleted_resources['subnets'].append(subnet_id)
+                logger.info(f"Deleted subnet: {subnet_id}")
+            except Exception as e:
+                logger.error(f"Error deleting subnet {subnet_id}: {str(e)}")
+                continue
 
-        except Exception as e:
-            logger.error(f"Error during resource deletion: {str(e)}")
-            raise
+        # 4. Finally delete networks
+        for network in resources['networks']:
+            try:
+                network_id = network['resource_id']
+                logger.info(f"Deleting network: {network['resource_name']} ({network['status']})")
+                self.os_conn.network.delete_network(network_id)
+                deleted_resources['networks'].append(network_id)
+                logger.info(f"Deleted network: {network_id}")
+            except Exception as e:
+                logger.error(f"Error deleting network {network_id}: {str(e)}")
+                continue
+
+        # Bulk update all successfully deleted resources
+        with psycopg2.connect(**self.db_params) as conn:
+            with conn.cursor() as cur:
+                for resource_type, resource_ids in deleted_resources.items():
+                    if resource_ids:  # Only update if we have deleted resources
+                        cur.execute(f"""
+                            UPDATE {resource_type}
+                            SET system_deleted = TRUE,
+                                updated_time = NOW()
+                            WHERE resource_id = ANY(%s)
+                        """, (resource_ids,))
+                        logger.info(f"Updated {len(resource_ids)} {resource_type} as system_deleted")
+                conn.commit()
+
+    except Exception as e:
+        logger.error(f"Error during resource deletion: {str(e)}")
+        raise
 
 
 def main():
