@@ -10,7 +10,9 @@ CREATE TABLE servers (
     flavor VARCHAR,
     image VARCHAR,
     security_groups TEXT[],
-    addresses JSONB
+    addresses JSONB,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Networks table
@@ -22,7 +24,9 @@ CREATE TABLE networks (
     updated_time TIMESTAMP NOT NULL,
     last_seen_time TIMESTAMP NOT NULL,
     first_time_not_seen TIMESTAMP,
-    port_security_enabled BOOLEAN
+    port_security_enabled BOOLEAN,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Routers table
@@ -34,7 +38,9 @@ CREATE TABLE routers (
     updated_time TIMESTAMP NOT NULL,
     last_seen_time TIMESTAMP NOT NULL,
     first_time_not_seen TIMESTAMP,
-    external_gateway_info JSONB
+    external_gateway_info JSONB,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Subnets table
@@ -48,7 +54,9 @@ CREATE TABLE subnets (
     first_time_not_seen TIMESTAMP,
     network_id VARCHAR,
     allocation_pools JSONB,
-    cidr VARCHAR
+    cidr VARCHAR,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- GPU Leases table
@@ -64,7 +72,9 @@ CREATE TABLE gpu_leases (
     updated_time TIMESTAMP,
     degraded BOOLEAN DEFAULT FALSE,
     last_seen_time TIMESTAMP NOT NULL,
-    first_time_not_seen TIMESTAMP
+    first_time_not_seen TIMESTAMP,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- GPU Lease Reservations table

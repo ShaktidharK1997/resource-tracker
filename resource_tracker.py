@@ -128,7 +128,8 @@ class ResourceTracker:
                 if missing_ids:
                     cur.execute("""
                         UPDATE servers 
-                        SET first_time_not_seen = %s
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
                         WHERE resource_id = ANY(%s)
                         AND first_time_not_seen IS NULL
                     """, (current_time, list(missing_ids)))
@@ -189,7 +190,8 @@ class ResourceTracker:
                 if missing_ids:
                     cur.execute("""
                         UPDATE networks 
-                        SET first_time_not_seen = %s
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
                         WHERE resource_id = ANY(%s)
                         AND first_time_not_seen IS NULL
                     """, (current_time, list(missing_ids)))
@@ -250,7 +252,8 @@ class ResourceTracker:
                 if missing_ids:
                     cur.execute("""
                         UPDATE routers 
-                        SET first_time_not_seen = %s
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
                         WHERE resource_id = ANY(%s)
                         AND first_time_not_seen IS NULL
                     """, (current_time, list(missing_ids)))
@@ -317,7 +320,8 @@ class ResourceTracker:
                 if missing_ids:
                     cur.execute("""
                         UPDATE subnets 
-                        SET first_time_not_seen = %s
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
                         WHERE resource_id = ANY(%s)
                         AND first_time_not_seen IS NULL
                     """, (current_time, list(missing_ids)))
@@ -390,7 +394,8 @@ class ResourceTracker:
                 if missing_ids:
                     cur.execute("""
                         UPDATE gpu_leases 
-                        SET first_time_not_seen = %s
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
                         WHERE lease_id = ANY(%s)
                         AND first_time_not_seen IS NULL
                     """, (current_time, list(missing_ids)))
