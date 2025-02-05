@@ -94,8 +94,8 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
                     WHERE lease_name LIKE %s
                 """, (f'%{search_string}%',))
                 results['leases'] = [{
-                    'lease_id': row[0],
-                    'lease_name': row[1],
+                    'resource_id': row[0],
+                    'resource_name': row[1],
                     'created_time': row[2],
                     'last_seen_time': row[3]
                 } for row in cur.fetchall()]

@@ -507,12 +507,10 @@ class ResourceTracker:
                 print(f"\n{resource_type.upper()} that have the query string in them:")
                 table_data = []
                 for item in items:
-                    age = datetime.now() - item['created_time']
                     row = [
                         item['resource_id'],
                         item['resource_name'],
                         item['created_time'].strftime('%Y-%m-%d %H:%M:%S'),
-                        f"{age.days}d {age.seconds//3600}h",
                         item['last_seen_time'].strftime('%Y-%m-%d %H:%M:%S')
                     ]
                     
