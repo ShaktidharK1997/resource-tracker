@@ -136,6 +136,27 @@ chmod +x install_cron.sh
 :::
 
 ::: {.cell .markdown}
+## Resource search
+
+Usage: python3 resource_search.py query_string 
+
+Arguments:
+
+  query_string      
+  
+    Required: Search the resource database for resource names with the particular query_string
+  
+    Example: 'track' will return resources having 'track' as a substring in the resource name.
+:::
+
+::: {.cell .code}
+```python
+remote.run('cd resource-tracker; python3 resource_search.py "track"')
+```
+:::
+
+
+::: {.cell .markdown}
 ## Resource cleanup
 
 Usage: python3 resource_cleanup.py HOURS [--dry-run]
