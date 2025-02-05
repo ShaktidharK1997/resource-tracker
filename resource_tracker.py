@@ -12,6 +12,7 @@ from keystoneauth1 import session
 from openstack import connection
 from dotenv import load_dotenv
 import os 
+from tabulate import tabulate
 
 # Load environment variables from .env file
 load_dotenv()
@@ -30,24 +31,24 @@ logger = logging.getLogger(__name__)
 class ResourceTracker:
     def __init__(self, db_params: Dict[str, str], openstack_auth: Dict[str, str], blazar_auth: Dict[str, str]):
         self.db_params = db_params
-        
+        if openstack_auth:
         # Initialize OpenStack connection
-        auth = v3.ApplicationCredential(
-            auth_url=openstack_auth['auth_url'],
-            application_credential_id=openstack_auth['application_credential_id'],
-            application_credential_secret=openstack_auth['application_credential_secret']
-        )
-        self.os_sess = session.Session(auth=auth)
-        self.os_conn = connection.Connection(session=self.os_sess)
-
+            auth = v3.ApplicationCredential(
+                auth_url=openstack_auth['auth_url'],
+                application_credential_id=openstack_auth['application_credential_id'],
+                application_credential_secret=openstack_auth['application_credential_secret']
+            )
+            self.os_sess = session.Session(auth=auth)
+            self.os_conn = connection.Connection(session=self.os_sess)
+        if blazar_auth:
         # Initialize Blazar connection
-        blazar_auth = v3.ApplicationCredential(
-            auth_url=blazar_auth['auth_url'],
-            application_credential_id=blazar_auth['application_credential_id'],
-            application_credential_secret=blazar_auth['application_credential_secret']
-        )
-        self.blazar_sess = session.Session(auth=blazar_auth)
-        self.blazar_conn = chi.blazar(session=self.blazar_sess)
+            blazar_auth = v3.ApplicationCredential(
+                auth_url=blazar_auth['auth_url'],
+                application_credential_id=blazar_auth['application_credential_id'],
+                application_credential_secret=blazar_auth['application_credential_secret']
+            )
+            self.blazar_sess = session.Session(auth=blazar_auth)
+            self.blazar_conn = chi.blazar(session=self.blazar_sess)
 
     def get_db_connection(self):
         """Create and return a database connection"""
@@ -498,6 +499,27 @@ class ResourceTracker:
         except Exception as e:
             logger.error(f"Failed to update resources: {str(e)}")
             raise
+
+    def display_resources(self, resources: Dict[str, List[Dict]]):
+        """Display given resources using tabulate"""
+        for resource_type, items in resources.items():
+            if items:
+                print(f"\n{resource_type.upper()} that have the query string in them:")
+                table_data = []
+                for item in items:
+                    age = datetime.now() - item['created_time']
+                    row = [
+                        item['resource_id'],
+                        item['resource_name'],
+                        item['created_time'].strftime('%Y-%m-%d %H:%M:%S'),
+                        f"{age.days}d {age.seconds//3600}h",
+                        item['last_seen_time'].strftime('%Y-%m-%d %H:%M:%S')
+                    ]
+                    
+                    table_data.append(row)
+
+                headers = ['ID', 'Name', 'Created Time', 'Last Seen Time',]
+                print(tabulate(table_data, headers=headers, tablefmt='grid'))
     
 def main():
     # Database connection parameters

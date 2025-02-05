@@ -126,7 +126,7 @@ class ResourceCleaner:
             raise
 
     def display_resources(self, resources: Dict[str, List[Dict]]):
-        """Display resources that will be deleted"""
+        """Display given resources using tabulate"""
         for resource_type, items in resources.items():
             if items:
                 print(f"\n{resource_type.upper()} to be deleted:")
