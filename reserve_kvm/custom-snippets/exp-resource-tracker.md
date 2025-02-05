@@ -47,6 +47,13 @@ remote.run("docker run hello-world")
 
 ::: {.cell .code}
 ```python
+remote.run("sudo apt-get install -y python3 python3-pip")
+remote.run("python3 -m pip config set global.break-system-packages true")
+```
+:::
+
+::: {.cell .code}
+```python
 # install Python libraries required for resource tracking
 remote.run("git clone https://github.com/ShaktidharK1997/resource-tracker.git")
 remote.run("cd resource-tracker; pip3 install -r requirements.txt")
@@ -136,17 +143,20 @@ chmod +x install_cron.sh
 :::
 
 ::: {.cell .markdown}
-## Resource search
+## Resource Search
+The resource_search.py script allows you to search the resource database for resources whose names contain a specific query string.
 
-Usage: python3 resource_search.py query_string 
-
+Usage:
+```bash
+python3 resource_search.py query_string
+```
 Arguments:
 
-  query_string      
-  
-    Required: Search the resource database for resource names with the particular query_string
-  
-    Example: 'track' will return resources having 'track' as a substring in the resource name.
+- query_string:
+
+    Required: The string to search for in the resource names.
+
+Example: If you use 'track' as the query string, the script will return all resources that have 'track' as a substring in their names.
 :::
 
 ::: {.cell .code}
