@@ -20,15 +20,25 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Dict[str, List[Dict[str, Any]]]:
-    """Search for resources with names containing the given substring."""
+    """Search for resources with names containing the given substrings."""
     results = {
         'servers': [],
         'networks': [],
         'routers': [],
         'subnets': [],
-        'leases': []
+        'gpu_leases': [],
+        'floating_ips': []
     }
+
+    # Split the search string into multiple substrings using '*' as a delimiter
+    substrings = search_string.split('*')
+    substrings = [s.strip() for s in substrings if s.strip()]  # Remove empty strings
+
+    if not substrings:
+        logger.error("No valid substrings provided in the search query.")
+        return results
 
     try:
         # Get database connection
@@ -36,11 +46,11 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
         try:
             with conn.cursor() as cur:
                 # Search servers
-                cur.execute("""
+                cur.execute(f"""
                     SELECT resource_id, resource_name, created_time, last_seen_time
                     FROM servers
-                    WHERE resource_name LIKE %s
-                """, (f'%{search_string}%',))
+                    WHERE {" AND ".join([f"resource_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
                 results['servers'] = [{
                     'resource_id': row[0],
                     'resource_name': row[1],
@@ -49,11 +59,11 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
                 } for row in cur.fetchall()]
 
                 # Search networks
-                cur.execute("""
+                cur.execute(f"""
                     SELECT resource_id, resource_name, created_time, last_seen_time
                     FROM networks
-                    WHERE resource_name LIKE %s
-                """, (f'%{search_string}%',))
+                    WHERE {" AND ".join([f"resource_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
                 results['networks'] = [{
                     'resource_id': row[0],
                     'resource_name': row[1],
@@ -62,11 +72,11 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
                 } for row in cur.fetchall()]
 
                 # Search routers
-                cur.execute("""
+                cur.execute(f"""
                     SELECT resource_id, resource_name, created_time, last_seen_time
                     FROM routers
-                    WHERE resource_name LIKE %s
-                """, (f'%{search_string}%',))
+                    WHERE {" AND ".join([f"resource_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
                 results['routers'] = [{
                     'resource_id': row[0],
                     'resource_name': row[1],
@@ -75,11 +85,11 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
                 } for row in cur.fetchall()]
 
                 # Search subnets
-                cur.execute("""
+                cur.execute(f"""
                     SELECT resource_id, resource_name, created_time, last_seen_time
-                    FROM subnets
-                    WHERE resource_name LIKE %s
-                """, (f'%{search_string}%',))
+                            from subnets
+                    WHERE {" AND ".join([f"resource_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
                 results['subnets'] = [{
                     'resource_id': row[0],
                     'resource_name': row[1],
@@ -88,12 +98,25 @@ def search_resources_by_name(tracker: ResourceTracker, search_string: str) -> Di
                 } for row in cur.fetchall()]
 
                 # Search GPU leases
-                cur.execute("""
+                cur.execute(f"""
                     SELECT lease_id, lease_name, created_time, last_seen_time
                     FROM gpu_leases
-                    WHERE lease_name LIKE %s
-                """, (f'%{search_string}%',))
-                results['leases'] = [{
+                    WHERE {" AND ".join([f"lease_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
+                results['gpu_leases'] = [{
+                    'resource_id': row[0],
+                    'resource_name': row[1],
+                    'created_time': row[2],
+                    'last_seen_time': row[3]
+                } for row in cur.fetchall()]
+
+                # Search floating IPs
+                cur.execute(f"""
+                    SELECT resource_id, resource_name, created_time, last_seen_time
+                    FROM floating_ips
+                    WHERE {" AND ".join([f"resource_name LIKE %s" for _ in substrings])}
+                """, [f'%{s}%' for s in substrings])
+                results['floating_ips'] = [{
                     'resource_id': row[0],
                     'resource_name': row[1],
                     'created_time': row[2],
@@ -134,7 +157,6 @@ def main():
     results = search_resources_by_name(tracker, args.query_string)
 
     # Print the results
-    
     tracker.display_resources(results)
 if __name__ == "__main__":
     main()

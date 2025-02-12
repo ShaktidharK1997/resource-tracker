@@ -62,13 +62,82 @@ class ResourceTracker:
                 'networks': list(self.os_conn.network.networks()),
                 'routers': list(self.os_conn.network.routers()),
                 'subnets': list(self.os_conn.network.subnets()),
+                'floating_ips': list(self.os_conn.network.ips()),
                 'leases': self.blazar_conn.lease.list()
             }
             return resources
         except Exception as e:
             logger.error(f"Error fetching resources: {str(e)}")
             raise
-
+    
+    def update_floating_ips(self, conn, floating_ips: List[Any], current_time: datetime):
+        """Update floating IP records in the database"""
+        try:
+            with conn.cursor() as cur:
+                # Get existing floating IP IDs
+                cur.execute("SELECT resource_id FROM floating_ips")
+                existing_ids = {row[0] for row in cur.fetchall()}
+                
+                # Process each floating IP
+                current_ids = set()
+                for ip in floating_ips:
+                    current_ids.add(ip.id)
+                    
+                    # Prepare floating IP data
+                    ip_data = {
+                        'resource_id': ip.id,
+                        'resource_name': ip.description or ip.id,  # Use description or ID as name
+                        'status': ip.status,
+                        'created_time': ip.created_at,
+                        'updated_time': ip.updated_at,
+                        'last_seen_time': current_time,
+                        'description': ip.description or '',
+                        'floating_ip_address': ip.floating_ip_address,
+                        'fixed_ip_address': ip.fixed_ip_address or ''
+                    }
+                    
+                    if ip.id in existing_ids:
+                        # Update existing floating IP
+                        cur.execute("""
+                            UPDATE floating_ips 
+                            SET resource_name = %(resource_name)s,
+                                status = %(status)s,
+                                updated_time = %(updated_time)s,
+                                last_seen_time = %(last_seen_time)s,
+                                description = %(description)s,
+                                floating_ip_address = %(floating_ip_address)s,
+                                fixed_ip_address = %(fixed_ip_address)s
+                            WHERE resource_id = %(resource_id)s
+                        """, ip_data)
+                    else:
+                        # Insert new floating IP
+                        cur.execute("""
+                            INSERT INTO floating_ips (
+                                resource_id, resource_name, status, created_time,
+                                updated_time, last_seen_time, description,
+                                floating_ip_address, fixed_ip_address
+                            ) VALUES (
+                                %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
+                                %(updated_time)s, %(last_seen_time)s, %(description)s,
+                                %(floating_ip_address)s, %(fixed_ip_address)s
+                            )
+                        """, ip_data)
+                
+                # Update first_time_not_seen for floating IPs that no longer exist
+                missing_ids = existing_ids - current_ids
+                if missing_ids:
+                    cur.execute("""
+                        UPDATE floating_ips 
+                        SET first_time_not_seen = %s,
+                        user_deleted = TRUE
+                        WHERE resource_id = ANY(%s)
+                        AND first_time_not_seen IS NULL
+                    """, (current_time, list(missing_ids)))
+                
+        except Exception as e:
+            logger.error(f"Error updating floating IPs: {str(e)}")
+            raise
+    
     def update_servers(self, conn, servers: List[Any], current_time: datetime):
         """Update server records in the database"""
         try:
@@ -483,6 +552,7 @@ class ResourceTracker:
                 self.update_networks(conn, resources['networks'], current_time)
                 self.update_routers(conn, resources['routers'], current_time)
                 self.update_subnets(conn, resources['subnets'], current_time)
+                self.update_floating_ips(conn, resources['floating_ips'], current_time)
                 self.update_gpu_leases(conn, resources['leases'], current_time)
                 
                 # Commit transaction
@@ -513,7 +583,7 @@ class ResourceTracker:
                         item['created_time'].strftime('%Y-%m-%d %H:%M:%S'),
                         item['last_seen_time'].strftime('%Y-%m-%d %H:%M:%S')
                     ]
-                    
+
                     table_data.append(row)
 
                 headers = ['ID', 'Name', 'Created Time', 'Last Seen Time',]

@@ -91,3 +91,16 @@ CREATE TABLE gpu_lease_reservations (
     resource_properties JSONB,
     network_id VARCHAR
 );
+
+CREATE TABLE floating_ips (
+    resource_id VARCHAR NOT NULL,
+    resource_name VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    created_time TIMESTAMP NOT NULL,
+    updated_time TIMESTAMP NOT NULL,
+    last_seen_time TIMESTAMP NOT NULL,
+    first_time_not_seen TIMESTAMP,
+    description VARCHAR NOT NULL,
+    floating_ip_address VARCHAR NOT NULL,
+    fixed_ip_address VARCHAR NOT NULL
+);
