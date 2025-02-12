@@ -1,5 +1,5 @@
 -- Servers table
-CREATE TABLE servers (
+CREATE TABLE IF NOT EXISTS servers (
     resource_id VARCHAR PRIMARY KEY,
     resource_name VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE servers (
 );
 
 -- Networks table
-CREATE TABLE networks (
+CREATE TABLE IF NOT EXISTS networks (
     resource_id VARCHAR PRIMARY KEY,
     resource_name VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE networks (
 );
 
 -- Routers table
-CREATE TABLE routers (
+CREATE TABLE IF NOT EXISTS routers (
     resource_id VARCHAR PRIMARY KEY,
     resource_name VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE routers (
 );
 
 -- Subnets table
-CREATE TABLE subnets (
+CREATE TABLE IF NOT EXISTS subnets (
     resource_id VARCHAR PRIMARY KEY,
     resource_name VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
@@ -59,8 +59,7 @@ CREATE TABLE subnets (
     system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- GPU Leases table
-CREATE TABLE gpu_leases (
+CREATE TABLE IF NOT EXISTS gpu_leases (
     lease_id VARCHAR PRIMARY KEY,
     lease_name VARCHAR NOT NULL,
     user_id VARCHAR NOT NULL,
@@ -78,7 +77,7 @@ CREATE TABLE gpu_leases (
 );
 
 -- GPU Lease Reservations table
-CREATE TABLE gpu_lease_reservations (
+CREATE TABLE IF NOT EXISTS gpu_lease_reservations (
     reservation_id VARCHAR PRIMARY KEY,
     lease_id VARCHAR REFERENCES gpu_leases(lease_id),
     resource_id VARCHAR NOT NULL,
@@ -92,7 +91,7 @@ CREATE TABLE gpu_lease_reservations (
     network_id VARCHAR
 );
 
-CREATE TABLE floating_ips (
+CREATE TABLE IF NOT EXISTS floating_ips (
     resource_id VARCHAR NOT NULL,
     resource_name VARCHAR NOT NULL,
     status VARCHAR NOT NULL,
