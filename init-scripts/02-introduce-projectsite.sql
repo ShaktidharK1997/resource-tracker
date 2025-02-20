@@ -36,7 +36,7 @@ BEGIN
 END $$;
 
 -- Add project_site column to all relevant lease tables 
--- !!NOTE : Please change kvm@tacc to the project-site that you are currently tracking compute resources for 
+-- !!NOTE : Please change kvm@tacc to the project-site that you are currently tracking lease resources for 
 DO $$
 DECLARE
     gpu_tables text[] := ARRAY['gpu_leases', 'gpu_lease_reservations'];
