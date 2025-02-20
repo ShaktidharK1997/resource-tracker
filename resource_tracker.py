@@ -29,53 +29,96 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ResourceTracker:
-    def __init__(self, db_params: Dict[str, str], openstack_auth: Dict[str, str], blazar_auth: Dict[str, str]):
+    def __init__(self, db_params: Dict[str, str]):
         self.db_params = db_params
-        if openstack_auth:
-        # Initialize OpenStack connection
+        self.os_connections = {}
+        self.blazar_connections = {}
+        self.initialize_connections()
+
+    def initialize_connections(self):
+        """Initialize connections for all project sites"""
+        # Parse OpenStack credentials
+        auth_urls = os.getenv('OS_AUTH_URL', '').split(',')
+        app_cred_ids = os.getenv('OS_APPLICATION_CREDENTIAL_ID', '').split(',')
+        app_cred_secrets = os.getenv('OS_APPLICATION_CREDENTIAL_SECRET', '').split(',')
+
+        # Parse Blazar credentials
+        blazar_auth_urls = os.getenv('BLAZAR_AUTH_URL', '').split(',')
+        blazar_app_cred_ids = os.getenv('BLAZAR_APPLICATION_CREDENTIAL_ID', '').split(',')
+        blazar_app_cred_secrets = os.getenv('BLAZAR_APPLICATION_CREDENTIAL_SECRET', '').split(',')
+
+        # Initialize OpenStack connections
+        for auth_url, cred_id, secret in zip(auth_urls, app_cred_ids, app_cred_secrets):
+            auth_url = auth_url.strip()
+            cred_id = cred_id.strip()
+            secret = secret.strip()
+            
+            project_site = self.get_project_site(auth_url)
+            
             auth = v3.ApplicationCredential(
-                auth_url=openstack_auth['auth_url'],
-                application_credential_id=openstack_auth['application_credential_id'],
-                application_credential_secret=openstack_auth['application_credential_secret']
+                auth_url=auth_url,
+                application_credential_id=cred_id,
+                application_credential_secret=secret
             )
-            self.os_sess = session.Session(auth=auth)
-            self.os_conn = connection.Connection(session=self.os_sess)
-        if blazar_auth:
-        # Initialize Blazar connection
-            blazar_auth = v3.ApplicationCredential(
-                auth_url=blazar_auth['auth_url'],
-                application_credential_id=blazar_auth['application_credential_id'],
-                application_credential_secret=blazar_auth['application_credential_secret']
+            sess = session.Session(auth=auth)
+            self.os_connections[project_site] = connection.Connection(session=sess)
+
+        # Initialize Blazar connections
+        for auth_url, cred_id, secret in zip(blazar_auth_urls, blazar_app_cred_ids, blazar_app_cred_secrets):
+            auth_url = auth_url.strip()
+            cred_id = cred_id.strip()
+            secret = secret.strip()
+            
+            project_site = self.get_project_site(auth_url)
+            
+            auth = v3.ApplicationCredential(
+                auth_url=auth_url,
+                application_credential_id=cred_id,
+                application_credential_secret=secret
             )
-            self.blazar_sess = session.Session(auth=blazar_auth)
-            self.blazar_conn = chi.blazar(session=self.blazar_sess)
+            sess = session.Session(auth=auth)
+            self.blazar_connections[project_site] = chi.blazar(session=sess)
 
     def get_db_connection(self):
         """Create and return a database connection"""
         return psycopg2.connect(**self.db_params)
 
-    def fetch_current_resources(self) -> Dict[str, List[Any]]:
-        """Fetch all current resources from OpenStack and Blazar"""
+    def get_project_site(self, auth_url: str) -> str:
+        """Determine the project_site based on the auth_url."""
+        if 'kvm.tacc.chameleoncloud.org' in auth_url:
+            return 'kvm@tacc'
+        elif 'chi.tacc.chameleoncloud.org' in auth_url:
+            return 'chi@tacc'
+        elif 'chi.uc.chameleoncloud.org' in auth_url:
+            return 'chi@uc'
+        else:
+            raise ValueError(f"Unknown auth_url: {auth_url}")
+
+    def fetch_current_resources(self, project_site: str) -> Dict[str, List[Any]]:
+        """Fetch all current resources from OpenStack and Blazar for a specific project site"""
         try:
+            os_conn = self.os_connections.get(project_site)
+            blazar_conn = self.blazar_connections.get(project_site)
+            
             resources = {
-                'servers': list(self.os_conn.compute.servers()),
-                'networks': list(self.os_conn.network.networks()),
-                'routers': list(self.os_conn.network.routers()),
-                'subnets': list(self.os_conn.network.subnets()),
-                'floating_ips': list(self.os_conn.network.ips()),
-                'leases': self.blazar_conn.lease.list()
+                'servers': list(os_conn.compute.servers()) if os_conn else [],
+                'networks': list(os_conn.network.networks()) if os_conn else [],
+                'routers': list(os_conn.network.routers()) if os_conn else [],
+                'subnets': list(os_conn.network.subnets()) if os_conn else [],
+                'floating_ips': list(os_conn.network.ips()) if os_conn else [],
+                'leases': blazar_conn.lease.list() if blazar_conn else []
             }
             return resources
         except Exception as e:
-            logger.error(f"Error fetching resources: {str(e)}")
+            logger.error(f"Error fetching resources for {project_site}: {str(e)}")
             raise
     
-    def update_floating_ips(self, conn, floating_ips: List[Any], current_time: datetime):
+    def update_floating_ips(self, conn, floating_ips: List[Any], current_time: datetime, project_site: str):
         """Update floating IP records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing floating IP IDs
-                cur.execute("SELECT resource_id FROM floating_ips")
+                cur.execute("SELECT resource_id FROM floating_ips WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each floating IP
@@ -93,7 +136,8 @@ class ResourceTracker:
                         'last_seen_time': current_time,
                         'description': ip.description or '',
                         'floating_ip_address': ip.floating_ip_address,
-                        'fixed_ip_address': ip.fixed_ip_address or ''
+                        'fixed_ip_address': ip.fixed_ip_address or '',
+                        'project_site': project_site
                     }
                     
                     if ip.id in existing_ids:
@@ -115,11 +159,11 @@ class ResourceTracker:
                             INSERT INTO floating_ips (
                                 resource_id, resource_name, status, created_time,
                                 updated_time, last_seen_time, description,
-                                floating_ip_address, fixed_ip_address
+                                floating_ip_address, fixed_ip_address, project_site
                             ) VALUES (
                                 %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
                                 %(updated_time)s, %(last_seen_time)s, %(description)s,
-                                %(floating_ip_address)s, %(fixed_ip_address)s
+                                %(floating_ip_address)s, %(fixed_ip_address)s, %(project_site)s
                             )
                         """, ip_data)
                 
@@ -138,12 +182,12 @@ class ResourceTracker:
             logger.error(f"Error updating floating IPs: {str(e)}")
             raise
     
-    def update_servers(self, conn, servers: List[Any], current_time: datetime):
+    def update_servers(self, conn, servers: List[Any], current_time: datetime, project_site: str):
         """Update server records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing server IDs
-                cur.execute("SELECT resource_id FROM servers")
+                cur.execute("SELECT resource_id FROM servers WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each server
@@ -162,7 +206,8 @@ class ResourceTracker:
                         'flavor': server.flavor.get('id') if server.flavor else None,
                         'image': server.image.get('id') if server.image else None,
                         'security_groups': [sg.get('name') for sg in server.security_groups],
-                        'addresses': Json(server.addresses)
+                        'addresses': Json(server.addresses),
+                        'project_site': project_site
                     }
                     
                     if server.id in existing_ids:
@@ -185,11 +230,11 @@ class ResourceTracker:
                             INSERT INTO servers (
                                 resource_id, resource_name, status, created_time, 
                                 updated_time, last_seen_time, flavor, image,
-                                security_groups, addresses
+                                security_groups, addresses, project_site
                             ) VALUES (
                                 %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
                                 %(updated_time)s, %(last_seen_time)s, %(flavor)s, %(image)s,
-                                %(security_groups)s, %(addresses)s
+                                %(security_groups)s, %(addresses)s, %(project_site)s
                             )
                         """, server_data)
                 
@@ -208,12 +253,12 @@ class ResourceTracker:
             logger.error(f"Error updating servers: {str(e)}")
             raise
 
-    def update_networks(self, conn, networks: List[Any], current_time: datetime):
+    def update_networks(self, conn, networks: List[Any], current_time: datetime, project_site):
         """Update network records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing network IDs
-                cur.execute("SELECT resource_id FROM networks")
+                cur.execute("SELECT resource_id FROM networks WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each network
@@ -229,7 +274,8 @@ class ResourceTracker:
                         'created_time': network.created_at,
                         'updated_time': network.updated_at,
                         'last_seen_time': current_time,
-                        'port_security_enabled': network.is_port_security_enabled
+                        'port_security_enabled': network.is_port_security_enabled,
+                        'project_site': project_site
                     }
                     
                     if network.id in existing_ids:
@@ -248,10 +294,10 @@ class ResourceTracker:
                         cur.execute("""
                             INSERT INTO networks (
                                 resource_id, resource_name, status, created_time,
-                                updated_time, last_seen_time, port_security_enabled
+                                updated_time, last_seen_time, port_security_enabled, project_site
                             ) VALUES (
                                 %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
-                                %(updated_time)s, %(last_seen_time)s, %(port_security_enabled)s
+                                %(updated_time)s, %(last_seen_time)s, %(port_security_enabled)s, %(project_site)s
                             )
                         """, network_data)
                 
@@ -270,12 +316,12 @@ class ResourceTracker:
             logger.error(f"Error updating networks: {str(e)}")
             raise
 
-    def update_routers(self, conn, routers: List[Any], current_time: datetime):
+    def update_routers(self, conn, routers: List[Any], current_time: datetime, project_site: str ):
         """Update router records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing router IDs
-                cur.execute("SELECT resource_id FROM routers")
+                cur.execute("SELECT resource_id FROM routers WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each router
@@ -291,7 +337,8 @@ class ResourceTracker:
                         'created_time': router.created_at,
                         'updated_time': router.updated_at,
                         'last_seen_time': current_time,
-                        'external_gateway_info': Json(router.external_gateway_info)
+                        'external_gateway_info': Json(router.external_gateway_info),
+                        'project_site':project_site
                     }
                     
                     if router.id in existing_ids:
@@ -310,10 +357,10 @@ class ResourceTracker:
                         cur.execute("""
                             INSERT INTO routers (
                                 resource_id, resource_name, status, created_time,
-                                updated_time, last_seen_time, external_gateway_info
+                                updated_time, last_seen_time, external_gateway_info, project_site
                             ) VALUES (
                                 %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
-                                %(updated_time)s, %(last_seen_time)s, %(external_gateway_info)s
+                                %(updated_time)s, %(last_seen_time)s, %(external_gateway_info)s, %(project_site)s
                             )
                         """, router_data)
                 
@@ -332,12 +379,12 @@ class ResourceTracker:
             logger.error(f"Error updating routers: {str(e)}")
             raise
 
-    def update_subnets(self, conn, subnets: List[Any], current_time: datetime):
+    def update_subnets(self, conn, subnets: List[Any], current_time: datetime, project_site: str):
         """Update subnet records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing subnet IDs
-                cur.execute("SELECT resource_id FROM subnets")
+                cur.execute("SELECT resource_id FROM subnets WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each subnet
@@ -355,7 +402,8 @@ class ResourceTracker:
                         'last_seen_time': current_time,
                         'network_id': subnet.network_id,
                         'allocation_pools': Json(subnet.allocation_pools),
-                        'cidr': subnet.cidr
+                        'cidr': subnet.cidr,
+                        'project_site': project_site
                     }
                     
                     if subnet.id in existing_ids:
@@ -377,11 +425,11 @@ class ResourceTracker:
                             INSERT INTO subnets (
                                 resource_id, resource_name, status, created_time,
                                 updated_time, last_seen_time, network_id,
-                                allocation_pools, cidr
+                                allocation_pools, cidr, project_site
                             ) VALUES (
                                 %(resource_id)s, %(resource_name)s, %(status)s, %(created_time)s,
                                 %(updated_time)s, %(last_seen_time)s, %(network_id)s,
-                                %(allocation_pools)s, %(cidr)s
+                                %(allocation_pools)s, %(cidr)s, %(project_site)s
                             )
                         """, subnet_data)
                 
@@ -400,12 +448,12 @@ class ResourceTracker:
             logger.error(f"Error updating subnets: {str(e)}")
             raise
 
-    def update_gpu_leases(self, conn, leases: List[Any], current_time: datetime):
+    def update_gpu_leases(self, conn, leases: List[Any], current_time: datetime, project_site: str):
         """Update GPU lease records in the database"""
         try:
             with conn.cursor() as cur:
                 # Get existing lease IDs
-                cur.execute("SELECT lease_id FROM gpu_leases")
+                cur.execute("SELECT lease_id FROM gpu_leases WHERE project_site = %s",(project_site, ))
                 existing_ids = {row[0] for row in cur.fetchall()}
                 
                 # Process each lease
@@ -426,7 +474,8 @@ class ResourceTracker:
                         'updated_time': lease['updated_at'],
                         'degraded': lease.get('degraded', False),
                         #'trust_id': lease.get('trust_id'),
-                        'last_seen_time': current_time
+                        'last_seen_time': current_time,
+                        'project_site': project_site
                     }
                     
                     if lease['id'] in existing_ids:
@@ -448,16 +497,16 @@ class ResourceTracker:
                             INSERT INTO gpu_leases (
                                 lease_id, lease_name, user_id, project_id,
                                 start_date, end_date, status, created_time,
-                                updated_time, degraded, last_seen_time
+                                updated_time, degraded, last_seen_time, project_site
                             ) VALUES (
                                 %(lease_id)s, %(lease_name)s, %(user_id)s, %(project_id)s,
                                 %(start_date)s, %(end_date)s, %(status)s, %(created_time)s,
-                                %(updated_time)s, %(degraded)s, %(last_seen_time)s
+                                %(updated_time)s, %(degraded)s, %(last_seen_time)s, %(project_site)s
                             )
                         """, lease_data)
 
                     # Process reservations for this lease
-                    self.update_gpu_lease_reservations(cur, lease['id'], lease['reservations'], current_time)
+                    self.update_gpu_lease_reservations(cur, lease['id'], lease['reservations'], current_time, project_site)
                 
                 # Update first_time_not_seen for leases that no longer exist
                 missing_ids = existing_ids - current_ids
@@ -474,11 +523,11 @@ class ResourceTracker:
             logger.error(f"Error updating GPU leases: {str(e)}")
             raise
 
-    def update_gpu_lease_reservations(self, cur, lease_id: str, reservations: List[Any], current_time: datetime):
+    def update_gpu_lease_reservations(self, cur, lease_id: str, reservations: List[Any], current_time: datetime, project_site: str):
         """Update GPU lease reservation records in the database"""
         try:
             # Get existing reservation IDs for this lease
-            cur.execute("SELECT reservation_id FROM gpu_lease_reservations WHERE lease_id = %s", (lease_id,))
+            cur.execute("SELECT reservation_id FROM gpu_lease_reservations WHERE lease_id = %s and project_site = %s", (lease_id,project_site, ))
             existing_ids = {row[0] for row in cur.fetchall()}
             
             # Process each reservation
@@ -498,7 +547,8 @@ class ResourceTracker:
                     'missing_resources': reservation.get('missing_resources', False),
                     'resources_changed': reservation.get('resources_changed', False),
                     'resource_properties': Json(reservation.get('resource_properties', {})),
-                    'network_id': reservation.get('network_id')
+                    'network_id': reservation.get('network_id'),
+                    'project_site': project_site
                     #'min_hosts': reservation.get('min', 1),
                     #'max_hosts': reservation.get('max', 1)
                 }
@@ -521,11 +571,11 @@ class ResourceTracker:
                         INSERT INTO gpu_lease_reservations (
                             reservation_id, lease_id, resource_id, resource_type,
                             status, created_time, updated_time, missing_resources,
-                            resources_changed, resource_properties, network_id
+                            resources_changed, resource_properties, network_id, project_site
                         ) VALUES (
                             %(reservation_id)s, %(lease_id)s, %(resource_id)s, %(resource_type)s,
                             %(status)s, %(created_time)s, %(updated_time)s, %(missing_resources)s,
-                            %(resources_changed)s, %(resource_properties)s, %(network_id)s
+                            %(resources_changed)s, %(resource_properties)s, %(network_id)s, %(project_site)s
                         )
                     """, reservation_data)
                 
@@ -534,30 +584,32 @@ class ResourceTracker:
             raise
     
     def update_resources(self):
-        """Main method to update all resources"""
+        """Main method to update all resources across all project sites"""
         current_time = datetime.now()
         
         try:
-            # Fetch all current resources
-            resources = self.fetch_current_resources()
-            
-            # Get database connection
             conn = self.get_db_connection()
+            conn.autocommit = False
+            
             try:
-                # Start transaction
-                conn.autocommit = False
+                # Update resources for each project site
+                for project_site in self.os_connections.keys():
+                    logger.info(f"Updating resources for project site: {project_site}")
+                    resources = self.fetch_current_resources(project_site)
+                    
+                    # Update each resource type with project_site
+                    self.update_servers(conn, resources['servers'], current_time, project_site)
+                    self.update_networks(conn, resources['networks'], current_time, project_site)
+                    self.update_routers(conn, resources['routers'], current_time, project_site)
+                    self.update_subnets(conn, resources['subnets'], current_time, project_site)
+                    self.update_floating_ips(conn, resources['floating_ips'], current_time, project_site)
+                    
+                    # Update Blazar leases if available for this site
+                    if project_site in self.blazar_connections:
+                        self.update_gpu_leases(conn, resources['leases'], current_time, project_site)
                 
-                # Update each resource type
-                self.update_servers(conn, resources['servers'], current_time)
-                self.update_networks(conn, resources['networks'], current_time)
-                self.update_routers(conn, resources['routers'], current_time)
-                self.update_subnets(conn, resources['subnets'], current_time)
-                self.update_floating_ips(conn, resources['floating_ips'], current_time)
-                self.update_gpu_leases(conn, resources['leases'], current_time)
-                
-                # Commit transaction
                 conn.commit()
-                logger.info("Successfully updated all resources")
+                logger.info("Successfully updated all resources across all project sites")
                 
             except Exception as e:
                 conn.rollback()
@@ -570,6 +622,7 @@ class ResourceTracker:
             logger.error(f"Failed to update resources: {str(e)}")
             raise
 
+
     def display_resources(self, resources: Dict[str, List[Dict]]):
         """Display given resources using tabulate"""
         for resource_type, items in resources.items():
@@ -581,12 +634,12 @@ class ResourceTracker:
                         item['resource_id'],
                         item['resource_name'],
                         item['created_time'].strftime('%Y-%m-%d %H:%M:%S'),
-                        item['last_seen_time'].strftime('%Y-%m-%d %H:%M:%S')
+                        item['last_seen_time'].strftime('%Y-%m-%d %H:%M:%S'),
+                        item['project_site']
                     ]
-
                     table_data.append(row)
 
-                headers = ['ID', 'Name', 'Created Time', 'Last Seen Time',]
+                headers = ['ID', 'Name', 'Created Time', 'Last Seen Time', 'Project Site']
                 print(tabulate(table_data, headers=headers, tablefmt='grid'))
     
 def main():
@@ -598,23 +651,9 @@ def main():
         'host': os.getenv('DB_HOST'),
         'port': os.getenv('DB_PORT')
     }
-
-    # OpenStack authentication parameters
-    openstack_auth = {
-        'auth_url': os.getenv('OS_AUTH_URL'),
-        'application_credential_id': os.getenv('OS_APPLICATION_CREDENTIAL_ID'),
-        'application_credential_secret': os.getenv('OS_APPLICATION_CREDENTIAL_SECRET')
-    }
-
-    # Blazar authentication parameters
-    blazar_auth = {
-        'auth_url': os.getenv('BLAZAR_AUTH_URL'),
-        'application_credential_id': os.getenv('BLAZAR_APPLICATION_CREDENTIAL_ID'),
-        'application_credential_secret': os.getenv('BLAZAR_APPLICATION_CREDENTIAL_SECRET')
-    }
     
-    tracker = ResourceTracker(db_params, openstack_auth, blazar_auth)
+    tracker = ResourceTracker(db_params)
     tracker.update_resources()
 
 if __name__ == "__main__":
-    main() 
+    main()

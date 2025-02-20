@@ -101,5 +101,7 @@ CREATE TABLE IF NOT EXISTS floating_ips (
     first_time_not_seen TIMESTAMP,
     description VARCHAR NOT NULL,
     floating_ip_address VARCHAR NOT NULL,
-    fixed_ip_address VARCHAR NOT NULL
+    fixed_ip_address VARCHAR NOT NULL,
+    user_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    system_deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
